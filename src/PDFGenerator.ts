@@ -13,7 +13,7 @@ import {
   REP_ID, REP_SVG_PATH, REP_NAME, REP_PHONE, REP_EMAIL, REP_DATE, REP_AGE, REP_GS_VALUE, REP_UI_DESC, REP_UF_DESC, REP_EP_DESC, REP_BD_DESC, REP_PSE_DESC, REP_AIC_DESC,
   REP_PSA_DESC, REP_PSA_VALUE, REP_CLINICAL_STAGE, REP_RISK_LEVEL, REP_TREATMENT_OPTIONS, DOC_NOTES, NOTES_TO_DOC_REP, constructDocNotesTag
 } from "../util";
-import { FIND_ME_STRING, GET_HTML_TEMPLATE } from "../queries";
+import { FIND_ME_STRING, FIND_TREATMENT_OPTIONS, GET_HTML_TEMPLATE } from "../queries";
 import { initializeApollo } from "../apollo";
 import { getTemplate } from "./templates/pdf-template";
 
@@ -27,7 +27,7 @@ export class PDFGenerator {
     try {
       const { body, headers } = event;
       // Extract the email and captcha code from the request body
-      const { treatmentoptionid } = JSON.parse(body.toString());
+      const { treatmentOptionId } = JSON.parse(body.toString());
       const { authorization } = JSON.parse(JSON.stringify(headers));
 
       // console.log(`headers information - ` + JSON.stringify(headers));
@@ -38,7 +38,7 @@ export class PDFGenerator {
             message: "User not authorised to access the endpoint",
           }),
         };
-      } else if (!treatmentoptionid) {
+      } else if (!treatmentOptionId) {
         return {
           statusCode: 422,
           body: JSON.stringify({
@@ -98,7 +98,7 @@ export class PDFGenerator {
       let isValid = false;
       let treatmentOptions = [];
       existingTreatmentOptions.map(option => {
-        if (option.id == treatmentoptionid) {
+        if (option.id == treatmentOptionId) {
           treatmentOptions.push(option);
           isValid = true;
           return;
@@ -118,7 +118,7 @@ export class PDFGenerator {
         return {
           statusCode: 422,
           body: JSON.stringify({
-            message: `Error occured: no treatment options entry found for the treatment id ${treatmentoptionid}`
+            message: `Error occured: no treatment options entry found for the treatment id ${treatmentOptionId}`
           }),
         };
       }
@@ -147,10 +147,10 @@ export class PDFGenerator {
       const { age, downloadTemplate, uiSelector, possibleTreatmentOptions, preferenceScores } = treatmentToolMaster
       const { lifeExpectancyYears } = age
 
-      const svgReportIdPath = generateQRCodeSVG(treatmentoptionid);
-      console.log("svgReportIdPath..." + treatmentoptionid);
+      const svgReportIdPath = generateQRCodeSVG(treatmentOptionId);
+      console.log("svgReportIdPath..." + treatmentOptionId);
 
-      let htmlResp = createHTMLFromTemplate(downloadTemplate, users_permissions_user, uiSelector, svgReportIdPath, treatmentoptionid, toolCurrentPatientPref, toolCurrentPatientData, possibleTreatmentOptions, preferenceScores, lifeExpectancyYears, doctorNotes);
+      let htmlResp = createHTMLFromTemplate(downloadTemplate, users_permissions_user, uiSelector, svgReportIdPath, treatmentOptionId, toolCurrentPatientPref, toolCurrentPatientData, possibleTreatmentOptions, preferenceScores, lifeExpectancyYears, doctorNotes);
       const html = getTemplate(htmlResp);
       const options = {
         format: "A4",
@@ -170,16 +170,161 @@ export class PDFGenerator {
         isBase64Encoded: true,
       };
     } catch (error) {
-      console.error("Error : ", error);
+      console.error("generatePDFWeb - Error : ", error);
       return {
         statusCode: 500,
         body: JSON.stringify({
           error,
-          message: "Something went wrong",
+          message: "generatePDFWeb - Something went wrong",
         }),
       };
     }
   };
+
+  /**
+   * This function returns the buffer for a generated PDF of manual
+   * @param {any} event - The object that comes for lambda which includes the http's attributes
+   * @returns {Array<any>} array of Structure Instructions
+   */
+  static generatePDFMobile: GeneratorFunction = async (event, context) => {
+    try {
+      const { body, headers } = event;
+      // Extract the email and captcha code from the request body
+      const { treatmentOptionId } = JSON.parse(body.toString());
+      const { authorization } = JSON.parse(JSON.stringify(headers));
+
+      console.log(`headers information - ` + JSON.stringify(headers));
+      if (!authorization) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({
+            message: "User not authorised to access the endpoint"
+          }),
+        };
+      } else if (!treatmentOptionId) {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: "Treatment Options information not found as part of the request"
+          }),
+        };
+      }
+
+      const respMe = await findMeByToken(authorization);
+      if (!respMe || respMe?.data?.errors) {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: "Error occured while fetching me"
+          }),
+        };
+      }
+      const userMe = respMe?.data?.data?.me;
+      if (!userMe) {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: "Error occured while fetching me information"
+          }),
+        };
+      }
+      const role = userMe["role"];
+      if (!role) {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: "Role is invalid for this request"
+          }),
+        };
+      }
+      const { type } = role;
+      if (!type || type != "reader") {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: "Role is not valid to perform this operation"
+          }),
+        };
+      }
+
+      const client = initializeApollo();
+
+      console.log(`fetch the html template`);
+      const respHTMLTemplate = await client.query({
+        query: GET_HTML_TEMPLATE,
+      });
+      if (!respHTMLTemplate || respHTMLTemplate.error) {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: "Error occured while fetching the raw html template"
+          }),
+        };
+      }
+
+      console.log(`fetch the treatment option based on the id: ${treatmentOptionId}`);
+      const respTreatmentOptions = await findTreatmentOptions(authorization, treatmentOptionId);
+      console.log(`Treatment Option with User Info response ${respTreatmentOptions}`);
+      if (!respTreatmentOptions || respTreatmentOptions?.data?.errors) {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: "Error occured while validating the request"
+          }),
+        };
+      }
+
+      const { treatmentOptions } = respTreatmentOptions?.data?.data
+      if (!treatmentOptions || treatmentOptions.length < 1) {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: `Error occured: no treatment options entry found for the treatment id ${treatmentOptionId}`
+          }),
+        };
+      }
+
+      const { users_permissions_user, optionState, doctorNotes } = treatmentOptions[0]
+      const { toolCurrentPatientPref, toolCurrentPatientData } = optionState
+      console.log(`HTML template fetch response ${JSON.stringify(respHTMLTemplate)}`);
+      const { treatmentToolMaster } = respHTMLTemplate?.data
+      const { age, downloadTemplate, uiSelector, possibleTreatmentOptions, preferenceScores } = treatmentToolMaster
+      const { lifeExpectancyYears } = age
+
+      const svgReportIdPath = generateQRCodeSVG(treatmentOptionId);
+      console.log("svgReportIdPath..." + treatmentOptionId);
+
+      let htmlContent = createHTMLFromTemplate(downloadTemplate, users_permissions_user, uiSelector, svgReportIdPath, treatmentOptionId, toolCurrentPatientPref, toolCurrentPatientData, possibleTreatmentOptions, preferenceScores, lifeExpectancyYears, doctorNotes);
+      console.log("constructed html content..." + htmlContent);
+      const html = getTemplate(htmlContent);
+      const options = {
+        format: "A4",
+        scale: 1,
+        printBackground: true,
+        margin: { top: "1in", right: "1in", bottom: "1in", left: "1in" },
+      };
+
+      const pdf = await Helper.getPDFBuffer(html, options);
+
+      return {
+        headers: {
+          "Content-type": "application/pdf",
+        },
+        statusCode: 200,
+        body: pdf.toString("base64"),
+        isBase64Encoded: true,
+      };
+    } catch (error) {
+      console.error("generatePDFMobile - Error : ", error);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          error,
+          message: "generatePDFMobile - Something went wrong",
+        }),
+      };
+    }
+  }
 }
 
 export const createHTMLFromTemplate = (htmlContent, user, selectorsMaster, svgReportIdPath, reportId, toolCurrentPatientData, toolCurrentPatientPref, possibleTreatmentOptions, preferenceScores, lifeExpectancyYears, doctorNotes) => {
@@ -246,4 +391,22 @@ const findMeByToken = async (token) => {
   // console.log(`User Info response for token: `);
   // console.log(respMe);
   return respMe;
+}
+
+const findTreatmentOptions = async (token, treatmentOptionId) => {
+  // update existing user with treatment options
+  const respTreatmentOptions = await axios.post(process.env.NEXT_PUBLIC_GRAPHQL_URI, {
+    query: FIND_TREATMENT_OPTIONS,
+    variables: {
+      "optionId": treatmentOptionId,
+    },
+  }, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': token
+    }
+  });
+  // console.log(`User Info response for token: `);
+  // console.log(respTreatmentOptions);
+  return respTreatmentOptions;
 }

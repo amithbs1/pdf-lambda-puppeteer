@@ -33,3 +33,8 @@ functions:
     memorySize: 1024 # Setting a higher RAM size to facilitate PDF generation
     events:
       - httpApi: 'POST /generate-pdfv3'
+  generate-pdfv2:
+    handler: handler.generatePDFMobile
+    memorySize: 1024 # Setting a higher RAM size to facilitate PDF generation
+    events:
+      - httpApi: 'POST /generate-pdfv2'

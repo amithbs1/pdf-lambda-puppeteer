@@ -1,6 +1,6 @@
 import { gql } from "@apollo/client/core"
 
-export const FIND_TREATMENT_OPTIONS = gql`query getSelectedTreatmentOptions($optionId: String) {
+export const FIND_TREATMENT_OPTIONS = `query getSelectedTreatmentOptions($optionId: String) {
   treatmentOptions(where: {id: $optionId}) {
     id
     optionState
