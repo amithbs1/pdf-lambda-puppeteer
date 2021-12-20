@@ -1,1 +1,1 @@
-export type GeneratorFunction = (event: any) => any;
+export type GeneratorFunction = (event: any, context: any) => any;

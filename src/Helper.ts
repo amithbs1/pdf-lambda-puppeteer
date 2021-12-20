@@ -24,6 +24,8 @@ export class Helper {
 
       return await page.pdf(options);
     } catch (error) {
+      console.log("*********************error****************")
+      console.log(error)
       return error;
     } finally {
       if (browser !== null) {

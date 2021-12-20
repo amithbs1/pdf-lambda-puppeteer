@@ -1,5 +1,5 @@
 service:
-  name: pdf-lambda-puppeteer
+  name: prostaid-pdf-generator-lambda
 
 custom:
   webpack:
@@ -17,8 +17,8 @@ plugins:
 provider:
   name: aws
   runtime: nodejs12.x
-  profile: personal # Modify or remove accordingly
-  region: ${opt:region, 'ap-south-1'}
+  profile: prostaid-prod
+  region: ${opt:region, 'us-west-2'}
   endpointType: REGIONAL
   stage: ${opt:stage, 'dev'}
   apiGateway:
@@ -28,10 +28,8 @@ provider:
     AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
 
 functions:
-  getPDF:
-    handler: handler.getPDF
+  generate-pdfv3:
+    handler: handler.generatePDFWeb
     memorySize: 1024 # Setting a higher RAM size to facilitate PDF generation
     events:
-      - http:
-          method: get
-          path: /getPDF
+      - httpApi: 'POST /generate-pdfv3'
